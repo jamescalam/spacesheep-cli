@@ -50,8 +50,9 @@ const HELP = `
                                            Antigravity, Cursor, Windsurf, VS Code and opencode at
                                            \`spacesheep mcp\`, and puts the /sheep skill where each reads skills.
                                            Takes --code ssc_… or --key ss_… to sign in with no browser
-    spacesheep install --ssh host1,host2   the same on other machines, from here: each gets its own key
-                                           over ssh (stdin), never on screen. --package <npm spec>
+    spacesheep install --ssh host1,host2   probes Node >= 20 and npx; skips working keys unless --force
+                                           new keys go over ssh stdin. --dry-run previews without keys or writes
+                                           --name explicitly renames; --package <npm spec>
     spacesheep mcp                         the spacesheep MCP server over stdio, on this machine's key —
                                            what install points every harness at
     spacesheep mcp status | uninstall      which harnesses go through it; take it out of them
@@ -175,7 +176,7 @@ function parse(argv) {
   }
   return opts;
 }
-const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service", "--dry-run", "--no-skill"]);
+const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service", "--dry-run", "--no-skill", "--force"]);
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 /** --scope as the server names it: stream(s) → "stream", session(s)/ingest → "ingest", full/none → undefined. */
 function keyScope(v) {
@@ -463,7 +464,7 @@ const commands = {
   }
   try {
     await commands[cmd](opts);
-    if (!opts.json && cmd !== "update") { const n = await updateNotice(); if (n) log(`\n${n}`); }
+    if (!opts.json && !opts.dryRun && cmd !== "update") { const n = await updateNotice(); if (n) log(`\n${n}`); }
   } catch (e) {
     console.error(`\n  ✗ ${e.message}\n`);
     process.exit(e.code === "EAUTH" ? 3 : 1);
