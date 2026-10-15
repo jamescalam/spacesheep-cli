@@ -89,6 +89,7 @@ async function fixture(t, hosts = { lab: {} }) {
     fs.mkdirSync(h.bin);
     fs.mkdirSync(path.join(h.home, ".claude-work"));
     fs.writeFileSync(path.join(h.home, ".claude-work", "settings.json"), "{}\n");
+    fs.writeFileSync(path.join(h.home, ".claude-work", ".claude.json"), "{}\n");
     if (h.key || h.machine) fs.writeFileSync(h.config, JSON.stringify({ key: h.key, machine: h.machine, username: "ann", other: "keep" }) + "\n");
     // Make stableCommand exercise the npx copy without ever contacting npm.
     h.cli = path.join(h.home, ".npm", "_npx", "spacesheep");
@@ -217,7 +218,7 @@ test("SSH passes a dotted --only home id intact through a POSIX sh fallback", as
   const r = await f.run(["--only", "claude-code:.claude-work", "--no-skill"]);
   assert.equal(r.code, 0, r.stderr);
   const entry = JSON.parse(fs.readFileSync(path.join(f.hosts.lab.home, ".claude-work", ".claude.json")));
-  assert.equal(entry.mcpServers.spacesheep.type, "stdio");
+  assert.ok(entry.mcpServers.spacesheep);
   assert.ok(f.events().find((e) => e.kind === "cli" && e.args.includes("claude-code:.claude-work")));
 });
 
@@ -233,6 +234,22 @@ test("SSH preserves hostile --only literally; no shell injection on either shell
   assert.match(r.stderr, /--only: no harness called/);
   assert.match(r.stderr, /ss_bbbbbbbb.*revoke/i);
   assert.ok(!r.stderr.includes(CHILD));
+});
+
+test("SSH forwards repeated --skip and keeps skipped configs and skills untouched", async (t) => {
+  const f = await fixture(t);
+  const home = f.hosts.lab.home;
+  fs.mkdirSync(path.join(home, ".codex", "skills"), { recursive: true });
+  fs.mkdirSync(path.join(home, ".cursor"));
+  const before = snapshot(path.join(home, ".claude-work"));
+  const r = await f.run(["--skip", "claude-code:.claude-work", "--skip", "cursor"]);
+  assert.equal(r.code, 0, r.stderr);
+  const args = f.events().find((e) => e.kind === "cli" && e.args[0] === "install").args;
+  assert.equal(args.filter((a) => a === "--skip").length, 2);
+  assert.deepEqual(snapshot(path.join(home, ".claude-work")), before);
+  assert.equal(fs.existsSync(path.join(home, ".cursor", "mcp.json")), false);
+  assert.ok(fs.existsSync(path.join(home, ".codex", "config.toml")));
+  assert.ok(fs.existsSync(path.join(home, ".codex", "skills", "sheep", "SKILL.md")));
 });
 
 test("SSH dry-run forwards the flag, prints the host plan, mints nothing and writes nothing", async (t) => {

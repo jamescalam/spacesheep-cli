@@ -36,7 +36,9 @@ test("Claude Code: replaces the remote entry, keeps everything else in ~/.claude
   assert.strictEqual(after.numStartups, 9);
   assert.deepStrictEqual(after.projects, state.projects);
   assert.deepStrictEqual(after.mcpServers.yc, state.mcpServers.yc);
-  assert.deepStrictEqual(after.mcpServers.spacesheep, { type: "stdio", command: ARGV[0], args: ARGV.slice(1) });
+  // By URL — the plugin's own URL, so Claude Code drops the plugin's copy — signed in
+  // by this machine's key through the helper.
+  assert.deepStrictEqual(after.mcpServers.spacesheep, { type: "http", url: "https://mcp.spacesheep.dev/mcp", headersHelper: `${ARGV[0]} ${ARGV[1]} mcp headers` });
   assert.strictEqual(H.install(h, ARGV).action, "unchanged");
   const st = H.status(h);
   assert.strictEqual(st.entries.length, 1);
@@ -147,6 +149,7 @@ test("skill: added where a harness reads skills, the command copy updated in pla
   fs.mkdirSync(path.join(home, ".codex", "skills"), { recursive: true });
   fs.mkdirSync(path.join(home, ".claude-work", "plugins"), { recursive: true });
   fs.writeFileSync(path.join(home, ".claude-work", "settings.json"), "{}");
+  fs.writeFileSync(path.join(home, ".claude-work", ".claude.json"), "{}");
   fs.writeFileSync(path.join(home, ".claude-work", "plugins", "installed_plugins.json"), '{"plugins":{"spacesheep@spacesheep":[]}}');
   fs.mkdirSync(path.join(home, ".cursor", "skills", "sheep"), { recursive: true });
   fs.writeFileSync(path.join(home, ".cursor", "skills", "sheep", "SKILL.md"), "someone else's sheep");
@@ -253,4 +256,82 @@ test("bridge: no key and a refused key answer the request with what to run", asy
     const bad = await drive(origin, [INIT], "ss_revoked");
     assert.match(bad.messages[0].error.message, /refused this machine's key \(Unknown or revoked API key\)/);
   } finally { server.close(); }
+});
+
+test("--skip takes one Claude home out by its folder name; --only still picks", () => {
+  const { chosen } = require("../lib/install");
+  const home = tmpHome();
+  for (const d of [".claude", ".claude-work", ".claude-nekko"]) fs.mkdirSync(path.join(home, d));
+  fs.writeFileSync(path.join(home, ".claude.json"), "{}");
+  fs.writeFileSync(path.join(home, ".claude-work", ".claude.json"), "{}");
+  fs.writeFileSync(path.join(home, ".claude-nekko", ".claude.json"), "{}");
+  fs.mkdirSync(path.join(home, ".codex"));
+  const all = H.harnesses({ home, platform: "linux", env: {} });
+  const ids = (list) => list.map((h) => h.id).sort();
+  assert.deepStrictEqual(ids(chosen(all, {})), ["claude-code", "claude-code:.claude-nekko", "claude-code:.claude-work", "codex"]);
+  assert.deepStrictEqual(ids(chosen(all, { skip: ["nekko"] })), ["claude-code", "claude-code:.claude-work", "codex"]);
+  assert.deepStrictEqual(ids(chosen(all, { skip: [".claude-nekko,codex"] })), ["claude-code", "claude-code:.claude-work"]);
+  assert.deepStrictEqual(ids(chosen(all, { only: "claude-code", skip: ["work"] })), ["claude-code", "claude-code:.claude-nekko"]);
+  assert.throws(() => chosen(all, { skip: ["nope"] }), /--skip: no harness called nope/);
+});
+
+test("a second Claude home where Claude Code never ran isn't written", () => {
+  const home = tmpHome();
+  fs.mkdirSync(path.join(home, ".claude"));
+  fs.mkdirSync(path.join(home, ".claude-placeholder"));
+  fs.writeFileSync(path.join(home, ".claude-placeholder", "settings.json"), "{}");
+  const h = H.harnesses({ home, platform: "linux", env: {} }).find((x) => x.id === "claude-code:.claude-placeholder");
+  assert.strictEqual(h.present, false);
+});
+
+test("--ssh: a working host is skipped even without a local key; nothing is minted or sent", async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "ss-ssh-"));
+  const log = path.join(bin, "calls.txt");
+  fs.writeFileSync(path.join(bin, "ssh"), `#!/bin/sh\n[ "$1" = -- ] && shift\necho "$@" >> ${JSON.stringify(log)}\ncat >> ${JSON.stringify(log)}\ncase "$*" in *status*) echo '{"key_valid":true,"machine":"Existing name"}';; esac\nexit 0\n`, { mode: 0o755 });
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "ss-cfg-"));
+  const env = { PATH: process.env.PATH, SPACESHEEP_CONFIG_DIR: process.env.SPACESHEEP_CONFIG_DIR, SPACESHEEP_KEY: process.env.SPACESHEEP_KEY };
+  process.env.PATH = `${bin}:${process.env.PATH}`;
+  process.env.SPACESHEEP_CONFIG_DIR = cfgDir;
+  delete process.env.SPACESHEEP_KEY;
+  try {
+    const lines = [];
+    await require("../lib/install").run({ ssh: ["box-1,box-2"], skip: ["nekko"] }, (l) => lines.push(l), () => {});
+    const calls = fs.readFileSync(log, "utf8");
+    assert.deepStrictEqual(calls.split("\n").filter((l) => /^box-/.test(l)).map((l) => l.split(" ")[0]), ["box-1", "box-1", "box-2", "box-2"]);
+    assert.ok(!calls.includes("install"), "a working host is checked and skipped");
+    assert.ok(!/ss_/.test(calls), "no key went over ssh");
+    assert.match(lines.join("\n"), /0 machine\(s\) connected, 2 skipped/);
+  } finally {
+    for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test("Claude Code's helper path is quoted when it has spaces, and still recognised", () => {
+  const argv = ["/Applications/My Node/node", "/Users/a b/.config/spacesheep/cli/bin/spacesheep.js", "mcp"];
+  const e = H.entryFor({ kind: "claude" }, argv);
+  assert.strictEqual(e.headersHelper, '"/Applications/My Node/node" "/Users/a b/.config/spacesheep/cli/bin/spacesheep.js" mcp headers');
+  assert.ok(H.isBridge(e));
+  assert.ok(H.isBridge({ type: "http", url: "https://mcp.spacesheep.dev/mcp", headersHelper: "node /x/spacesheep.js mcp headers" }));
+  assert.ok(!H.isBridge({ type: "http", url: "https://mcp.spacesheep.dev/mcp" }));
+});
+
+test("plugin: a disabled plugin no longer counts, so the skill comes from install", () => {
+  const home = tmpHome();
+  const dir = path.join(home, ".claude");
+  fs.mkdirSync(path.join(dir, "plugins"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".claude.json"), "{}");
+  fs.writeFileSync(path.join(dir, "plugins", "installed_plugins.json"), '{"version":2,"plugins":{"spacesheep@spacesheep":[{"scope":"user"}]}}');
+  assert.strictEqual(S.pluginEnabled(dir), true);
+  assert.match(S.skillTargets({ home, env: {} })[0].skip, /plugin/);
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ enabledPlugins: { "spacesheep@spacesheep": false } }));
+  assert.strictEqual(S.pluginEnabled(dir), false);
+  assert.ok(S.skillTargets({ home, env: {} })[0].file.endsWith(path.join("skills", "sheep", "SKILL.md")));
+});
+
+test("mcp headers prints only the header JSON", () => {
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "ss-cfg-"));
+  fs.writeFileSync(path.join(cfgDir, "config.json"), JSON.stringify({ key: "ss_abc" }));
+  const run = (env) => require("child_process").execFileSync(process.execPath, [path.join(__dirname, "..", "bin", "spacesheep.js"), "mcp", "headers"], { env: { PATH: process.env.PATH, ...env }, encoding: "utf8" });
+  assert.deepStrictEqual(JSON.parse(run({ SPACESHEEP_CONFIG_DIR: cfgDir })), { Authorization: "Bearer ss_abc" });
+  assert.deepStrictEqual(JSON.parse(run({ SPACESHEEP_CONFIG_DIR: path.join(cfgDir, "none") })), {});
 });
