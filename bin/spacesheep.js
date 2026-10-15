@@ -16,6 +16,13 @@ if (process.argv[2] === "memory" && process.argv[3] === "sync") {
 // `mcp` with nothing after it is what every harness on the machine runs (lib/bridge.js):
 // it starts on every harness launch, so it loads only the bridge, and stdout is the
 // protocol — nothing else may print there.
+// `mcp headers` is Claude Code's headersHelper (lib/harnesses.js): it prints the
+// header that signs a connection in, and nothing else, on every connect.
+if (process.argv[2] === "mcp" && process.argv[3] === "headers") {
+  const k = require("../lib/config").resolveKey();
+  process.stdout.write(JSON.stringify(k ? { Authorization: `Bearer ${k.key}` } : {}) + "\n");
+  return;
+}
 if (process.argv[2] === "mcp" && (process.argv.length === 3 || process.argv[3] === "serve")) {
   // No process.exit: stdout to a pipe is async, and exiting would drop the answers still in it.
   require("../lib/bridge").runBridge();
@@ -44,14 +51,17 @@ const HELP = `
                                            (no browser: you approved it by copying it while signed in)
     spacesheep connect <ss_key> [name]     sign in with no browser: mints this machine its own key, named
                                            after its hostname (or <name>); the pasted key is never stored
-    spacesheep install [--only codex,cursor] [--no-skill] [--dry-run]
+    spacesheep install [--only codex,cursor] [--skip work] [--no-skill] [--dry-run]
                                            connect EVERY coding harness on this machine at once: signs the
                                            machine in (once), points Claude Code, Codex, Gemini CLI,
                                            Antigravity, Cursor, Windsurf, VS Code and opencode at
                                            \`spacesheep mcp\`, and puts the /sheep skill where each reads skills.
-                                           Takes --code ssc_… or --key ss_… to sign in with no browser
-    spacesheep install --ssh host1,host2   the same on other machines, from here: each gets its own key
-                                           over ssh (stdin), never on screen. --package <npm spec>
+                                           Takes --code ssc_… or --key ss_… to sign in with no browser.
+                                           --skip leaves some out: an agent (cursor) or one Claude home
+                                           by its folder (.claude-work, or just work)
+    spacesheep install --ssh host1,host2   the same on other machines, from here. A machine that is already
+                                           signed in keeps its key; one that isn't gets its own, over ssh
+                                           stdin, never on screen. --package <npm spec> pins the version
     spacesheep mcp                         the spacesheep MCP server over stdio, on this machine's key —
                                            what install points every harness at
     spacesheep mcp status | uninstall      which harnesses go through it; take it out of them
@@ -168,6 +178,7 @@ function parse(argv) {
     else if (a === "--folder") (opts.folder = opts.folder || []).push(take());
     else if (a === "--on") (opts.on = opts.on || []).push(take());
     else if (a === "--ssh") (opts.ssh = opts.ssh || []).push(take());
+    else if (a === "--skip") (opts.skip = opts.skip || []).push(take());
     else if (a.startsWith("--") && a.includes("=")) { const [k, v] = a.slice(2).split(/=(.*)/); opts[camel(k)] = v; }
     else if (FLAGS.has(a)) opts[camel(a.slice(2))] = true;
     else if (a.startsWith("--")) opts[camel(a.slice(2))] = take();
@@ -175,7 +186,7 @@ function parse(argv) {
   }
   return opts;
 }
-const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service", "--dry-run", "--no-skill"]);
+const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service", "--dry-run", "--no-skill", "--no-login"]);
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 /** --scope as the server names it: stream(s) → "stream", session(s)/ingest → "ingest", full/none → undefined. */
 function keyScope(v) {
