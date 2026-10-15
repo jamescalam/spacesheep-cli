@@ -42,7 +42,19 @@ spacesheep install --ssh lab-1,lab-2,gpu-box   # each gets its own key, over ssh
 - An entry that already reached spacesheep (the remote URL, under any name) is
   **replaced**, not doubled, so no tool shows up twice. Everything else in each
   config file is kept, and a file that isn't plain JSON (comments) is left alone
-  and named.
+  and named. An **enabled Claude Code plugin** keeps its existing connection:
+  `install` reads its cached `.mcp.json` (including shared symlinks) and **skips
+  the bridge for that home**. The plan names the exact file and server entry.
+  That plugin still signs in separately. To switch to this machine's key, set
+  `enabledPlugins["spacesheep@spacesheep"]` to `false` in that home's
+  `settings.json` and rerun `install`. Disabling the plugin removes **/sheep and
+  talk**; install fetches /sheep and restores `commands/talk.md` from the disabled
+  plugin's cache. Keep the plugin installed and omit `--no-skill`. Shared settings
+  affect every home linked to that file.
+- Config symlinks stay symlinks: writes replace their real target atomically.
+  Claude state writes hold `.claude.json.lock` across reading and writing. A held
+  lock is left alone and reported with its path: wait for Claude to finish saving
+  or close its sessions, then retry.
 - The tools come live from the server, so a new tool needs no reinstall. Re-run
   `install` to refresh the skill.
 - A run from `npx` copies the CLI (no dependencies) into `~/.config/spacesheep/cli`
@@ -50,8 +62,15 @@ spacesheep install --ssh lab-1,lab-2,gpu-box   # each gets its own key, over ssh
   every harness start would wait on npm and fail offline.
 - Revoke one machine in Settings → API keys: each machine has its own key.
 - `spacesheep mcp status` shows which harnesses go through it; `spacesheep mcp
-  uninstall` takes it back out. `--only codex,cursor` limits either, `--dry-run`
-  shows what would change.
+  uninstall` takes it back out. `--only codex,cursor` limits install/uninstall;
+  `--except` excludes the same ids. Both apply to MCP entries **and skills**.
+  `--dry-run` shows what would change in harness configs and skills (the existing
+  sign-in/key check still runs).
+  For example, `spacesheep install --only claude-code --except
+  claude-code:.claude-placeholder,claude-code:.claude-other-model` leaves those
+  homes alone. `claude-code` selects the whole family; `claude-code:<directory
+  basename>` selects one additional home. See [install safety and fixture
+  replay](docs/install-safety.md).
 - Restart open harnesses (or reconnect in Claude Code's `/mcp`) to pick it up.
 
 ## Deploy automatically from GitHub Actions
@@ -406,7 +425,7 @@ open http://localhost:4280/
 | `spacesheep login` | Browser sign-in; stores a key in `~/.config/spacesheep/config.json` |
 | `spacesheep login --code ssc_…` | Sign in with the one-time code in the prompt at [spacesheep.dev/start](https://spacesheep.dev/start): no browser, because copying it while signed in was the approval. Works once, for 30 minutes; mints this machine its own key, named after its hostname (or `--name`) |
 | `spacesheep connect <ss_key> [name]` | Sign in with no browser. Mints this machine its own key, named after its hostname (or `name`), and stores that; the pasted key is never written to disk |
-| `spacesheep install` | Connect every coding harness on this machine (Claude Code, Codex, Gemini CLI, Antigravity, Cursor, Windsurf, VS Code, opencode) through this machine's one key, and install the `/sheep` skill. Options: `--code`, `--key`, `--only`, `--no-skill`, `--dry-run`, `--ssh host1,host2`, `--package <npm spec>` |
+| `spacesheep install` | Connect every coding harness on this machine (Claude Code, Codex, Gemini CLI, Antigravity, Cursor, Windsurf, VS Code, opencode) through this machine's one key, and install the `/sheep` skill. Options: `--code`, `--key`, `--only`, `--except`, `--no-skill`, `--dry-run`, `--ssh host1,host2`, `--package <npm spec>` |
 | `spacesheep mcp` | The spacesheep MCP server over stdio, on this machine's key — what `install` points every harness at |
 | `spacesheep mcp status \| uninstall` | Which harnesses go through it; take it out of them |
 | `spacesheep logout` | Forget the stored key |
