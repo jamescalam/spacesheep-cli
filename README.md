@@ -17,6 +17,43 @@ to in the dashboard. If the folder now holds a different page (its `<title>` cha
 `deploy` stops rather than replace the old one: pass `--space <url>` to update it
 anyway, or `--new` to publish the page as a new space. GitHub Actions skips that check.
 
+## Connect every coding agent on a machine at once
+
+```bash
+npx -y spacesheep@latest install
+```
+
+One command per machine, however many harnesses it runs. It signs the machine in
+(once, in the browser, or with `--code ssc_…` / `--key ss_…` and no browser), then
+points every harness it finds at `spacesheep mcp`, a local stdio server that uses
+that one key: **Claude Code** (every account), **Codex**, **Gemini CLI**,
+**Antigravity**, **Cursor**, **Windsurf**, **VS Code** and **opencode**. It also
+puts the `/sheep` skill where each of them reads skills, fetched fresh from
+spacesheep.dev.
+
+Without it, each harness connects to the server on its own and asks you to sign in
+on its own: eleven machines with five harnesses each is about fifty sign-ins. With
+it, that's eleven commands, or one, from a machine that's already set up:
+
+```bash
+spacesheep install --ssh lab-1,lab-2,gpu-box   # each gets its own key, over ssh stdin
+```
+
+- An entry that already reached spacesheep (the remote URL, under any name) is
+  **replaced**, not doubled, so no tool shows up twice. Everything else in each
+  config file is kept, and a file that isn't plain JSON (comments) is left alone
+  and named.
+- The tools come live from the server, so a new tool needs no reinstall. Re-run
+  `install` to refresh the skill.
+- A run from `npx` copies the CLI (no dependencies) into `~/.config/spacesheep/cli`
+  for the harnesses to run, since npx clears its own cache, and running npx on
+  every harness start would wait on npm and fail offline.
+- Revoke one machine in Settings → API keys: each machine has its own key.
+- `spacesheep mcp status` shows which harnesses go through it; `spacesheep mcp
+  uninstall` takes it back out. `--only codex,cursor` limits either, `--dry-run`
+  shows what would change.
+- Restart open harnesses (or reconnect in Claude Code's `/mcp`) to pick it up.
+
 ## Deploy automatically from GitHub Actions
 
 1. Create an API key at <https://spacesheep.dev/settings> and add it to the repo as
@@ -369,6 +406,9 @@ open http://localhost:4280/
 | `spacesheep login` | Browser sign-in; stores a key in `~/.config/spacesheep/config.json` |
 | `spacesheep login --code ssc_…` | Sign in with the one-time code in the prompt at [spacesheep.dev/start](https://spacesheep.dev/start): no browser, because copying it while signed in was the approval. Works once, for 30 minutes; mints this machine its own key, named after its hostname (or `--name`) |
 | `spacesheep connect <ss_key> [name]` | Sign in with no browser. Mints this machine its own key, named after its hostname (or `name`), and stores that; the pasted key is never written to disk |
+| `spacesheep install` | Connect every coding harness on this machine (Claude Code, Codex, Gemini CLI, Antigravity, Cursor, Windsurf, VS Code, opencode) through this machine's one key, and install the `/sheep` skill. Options: `--code`, `--key`, `--only`, `--no-skill`, `--dry-run`, `--ssh host1,host2`, `--package <npm spec>` |
+| `spacesheep mcp` | The spacesheep MCP server over stdio, on this machine's key — what `install` points every harness at |
+| `spacesheep mcp status \| uninstall` | Which harnesses go through it; take it out of them |
 | `spacesheep logout` | Forget the stored key |
 | `spacesheep whoami` | Who the current key belongs to |
 | `spacesheep deploy [dir\|file]` | Publish. Options: `--space`, `--new`, `--title`, `--slug`, `--emoji`, `--description`, `--visibility`, `--org`, `-m <version name>`, `--json`. A folder's `.spacesheep.json` pins it to one space; if `index.html`'s `<title>` no longer matches the page the pin last published, deploy stops and asks for `--space` (update it anyway) or `--new` (a new space). |
