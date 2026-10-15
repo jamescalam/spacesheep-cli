@@ -5,7 +5,8 @@ An enabled user-scoped spacesheep plugin supplies its own remote MCP connection.
 then the installed version's `.mcp.json`. Both bare server maps and `mcpServers`
 maps are supported. Paths are followed through symlinks; the plan prints the real
 MCP file, its entry key and the `plugin:spacesheep:<server>` name. An entry must
-point to `https://mcp.spacesheep.dev/mcp` to suppress the bridge. A server merely
+point to the configured MCP endpoint (normally `https://mcp.spacesheep.dev/mcp`)
+to suppress the new entry. A server merely
 named `spacesheep` at a different endpoint does not suppress it.
 
 The installer skips that home's bridge rather than disable a plugin MCP server.
@@ -22,6 +23,11 @@ the home's commands directory, marking only its own copy for future updates and
 uninstall. An unrelated existing talk command is left alone. A missing cached
 talk command is reported; keep/reinstall the plugin cache before migrating.
 Enabled plugins continue their own OAuth sign-in until the user disables them.
+For homes that are configured, the HTTP/helper route added independently in
+1.33.0 is preserved. No plugin cache authentication is changed here. `--except`
+and the existing `--skip` both exclude MCP entries and skills; `--skip` also
+accepts short home names. Additional homes without `.claude.json` stay unselected
+by default, as in 1.33.0.
 
 Claude's [plugin component reference](https://code.claude.com/docs/en/plugins-reference)
 documents `.mcp.json` and plugin commands. This is user-home installation; it does

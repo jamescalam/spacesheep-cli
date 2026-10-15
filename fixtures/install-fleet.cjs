@@ -23,6 +23,7 @@ function fleet(home, enabled = true, wrapped = false) {
   for (const name of homes) {
     const dir = path.join(home, name);
     fs.mkdirSync(path.join(dir, "projects"), { recursive: true });
+    if (name !== ".claude-placeholder") write(path.join(dir, ".claude.json"), {});
     fs.symlinkSync(path.join(shared, "settings.json"), path.join(dir, "settings.json"));
     fs.symlinkSync(path.join(shared, "plugins"), path.join(dir, "plugins"));
   }

@@ -33,11 +33,12 @@ for (const wrapped of [false, true]) test(`enabled plugin's own MCP file prevent
   const before = fs.readFileSync(file, "utf8");
   for (const dir of homes.slice(0, 5)) {
     const h = byId(home, `claude-code:${dir}`);
+    const state = fs.readFileSync(h.file, "utf8");
     const r = H.install(h, ARGV);
     assert.equal(r.action, "skipped");
     assert.ok(r.note.includes(file));
     assert.match(r.note, /plugin:spacesheep:spacesheep/);
-    assert.equal(fs.existsSync(h.file), false);
+    assert.equal(fs.readFileSync(h.file, "utf8"), state);
   }
   assert.equal(fs.readFileSync(file, "utf8"), before);
 });
@@ -123,8 +124,8 @@ test("--except excludes one Claude home while --only selects the family", async 
   const { homes } = fleet(home, false);
   const all = H.harnesses({ home, env: {} });
   const excluded = "claude-code:.claude-placeholder";
-  assert.equal(I.chosen(all, "claude-code", excluded).some((h) => h.id === excluded), false);
-  assert.throws(() => I.chosen(all, null, "typo"), /--except/);
+  assert.equal(I.chosen(all, { only: "claude-code", except: excluded }).some((h) => h.id === excluded), false);
+  assert.throws(() => I.chosen(all, { except: "typo" }), /--except/);
   offline(t, home);
   await I.run({ only: "claude-code", except: excluded }, () => {}, () => {});
   const dir = path.join(home, homes.at(-1));
@@ -221,6 +222,7 @@ test("plugin at another endpoint or installed only for a project does not suppre
   write(path.join(cache, ".mcp.json"), { spacesheep: { url: "https://example.com/mcp" } });
   assert.equal(H.install(byId(home, "claude-code:.claude-key1"), ARGV).action, "added");
   write(path.join(cache, ".mcp.json"), { spacesheep: { url: "https://mcp.spacesheep.dev/mcp" } });
+  assert.equal(H.install(byId(home, "claude-code:.claude-key3"), ARGV, { url: "https://example.com/mcp" }).action, "added");
   write(path.join(shared, "plugins", "installed_plugins.json"), { version: 2, plugins: { "spacesheep@spacesheep": [{ scope: "project", installPath: cache }] } });
   assert.equal(H.install(byId(home, "claude-code:.claude-key2"), ARGV).action, "added");
   assert.equal(S.hasPlugin(shared), false);
@@ -234,7 +236,7 @@ test("malformed plugin metadata is reported without adding a second route", (t) 
   const r = H.install(h, ARGV);
   assert.equal(r.action, "skipped");
   assert.match(r.error, /\.mcp.json/);
-  assert.equal(fs.existsSync(h.file), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(h.file, "utf8")), {});
 });
 
 test("talk restoration is idempotent, protects unrelated commands, and reports a missing cache", (t) => {
