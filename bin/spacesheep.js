@@ -13,6 +13,14 @@ if (process.argv[2] === "memory" && process.argv[3] === "sync") {
   require("../lib/memory").sync(process.argv.slice(4));
   return;
 }
+// `mcp` with nothing after it is what every harness on the machine runs (lib/bridge.js):
+// it starts on every harness launch, so it loads only the bridge, and stdout is the
+// protocol — nothing else may print there.
+if (process.argv[2] === "mcp" && (process.argv.length === 3 || process.argv[3] === "serve")) {
+  // No process.exit: stdout to a pipe is async, and exiting would drop the answers still in it.
+  require("../lib/bridge").runBridge();
+  return;
+}
 if (process.argv[2] === "sessions" && process.argv[3] === "ping") {
   require("../lib/sessions").ping(process.argv.slice(4));
   return;
@@ -36,6 +44,17 @@ const HELP = `
                                            (no browser: you approved it by copying it while signed in)
     spacesheep connect <ss_key> [name]     sign in with no browser: mints this machine its own key, named
                                            after its hostname (or <name>); the pasted key is never stored
+    spacesheep install [--only codex,cursor] [--no-skill] [--dry-run]
+                                           connect EVERY coding harness on this machine at once: signs the
+                                           machine in (once), points Claude Code, Codex, Gemini CLI,
+                                           Antigravity, Cursor, Windsurf, VS Code and opencode at
+                                           \`spacesheep mcp\`, and puts the /sheep skill where each reads skills.
+                                           Takes --code ssc_… or --key ss_… to sign in with no browser
+    spacesheep install --ssh host1,host2   the same on other machines, from here: each gets its own key
+                                           over ssh (stdin), never on screen. --package <npm spec>
+    spacesheep mcp                         the spacesheep MCP server over stdio, on this machine's key —
+                                           what install points every harness at
+    spacesheep mcp status | uninstall      which harnesses go through it; take it out of them
     spacesheep logout                      forget the stored key
     spacesheep whoami                      who the stored key belongs to
     spacesheep deploy [dir|file] [opts]    publish a folder (needs index.html) or one .html file
@@ -148,6 +167,7 @@ function parse(argv) {
     else if (a === "--config-dir") (opts.configDir = opts.configDir || []).push(take());
     else if (a === "--folder") (opts.folder = opts.folder || []).push(take());
     else if (a === "--on") (opts.on = opts.on || []).push(take());
+    else if (a === "--ssh") (opts.ssh = opts.ssh || []).push(take());
     else if (a.startsWith("--") && a.includes("=")) { const [k, v] = a.slice(2).split(/=(.*)/); opts[camel(k)] = v; }
     else if (FLAGS.has(a)) opts[camel(a.slice(2))] = true;
     else if (a.startsWith("--")) opts[camel(a.slice(2))] = take();
@@ -155,7 +175,7 @@ function parse(argv) {
   }
   return opts;
 }
-const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service"]);
+const FLAGS = new Set(["--camera", "--screen", "--test", "--beta", "--system", "--load-test", "--service", "--remove-service", "--new", "--no-manifest", "--claude", "--codex", "--antigravity", "--no-memory", "--codex-chain", "--once", "--no-service", "--dry-run", "--no-skill"]);
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 /** --scope as the server names it: stream(s) → "stream", session(s)/ingest → "ingest", full/none → undefined. */
 function keyScope(v) {
@@ -394,6 +414,15 @@ const commands = {
     if (sub === "status") return mirror.status(opts, out);
     if (sub === "run" || !sub) return mirror.run(opts, log);
     throw new Error("usage: spacesheep mirror [--dir DIR] [--port N] [--every 15s] [--recent N] | on | off | status");
+  },
+  async install(opts) { return require("../lib/install").run(opts, log, out); },
+  async mcp(opts) {
+    const ins = require("../lib/install");
+    const sub = opts._[0];
+    if (sub === "install") return ins.run(opts, log, out);
+    if (sub === "status") return ins.status(opts, out, log);
+    if (sub === "uninstall") return ins.uninstall(opts, log, out);
+    throw new Error("usage: spacesheep mcp (the stdio server harnesses run) | mcp install | mcp status | mcp uninstall [--only …] [--dry-run]");
   },
   async update() { return selfUpdate(log); },
   async memory(opts) {
