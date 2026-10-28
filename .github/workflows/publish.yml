@@ -11,6 +11,10 @@ name: Publish to npm
 # spacesheep-cli, workflow publish.yml, and allow "npm publish" (a new setup
 # allows only "npm stage publish"). A release runs the workflow file at its
 # tag, so release a commit that has this file.
+#
+# Publish releases one at a time, oldest first. Each release runs on its own:
+# a shared concurrency group would cancel every pending release but the newest,
+# and npm refuses "latest" for a version lower than one it already has.
 
 on:
   release:
@@ -19,10 +23,6 @@ on:
 permissions:
   contents: read
   id-token: write
-
-concurrency:
-  group: npm-publish
-  cancel-in-progress: false
 
 jobs:
   publish:
